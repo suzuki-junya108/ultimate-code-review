@@ -10,6 +10,7 @@ description: |
   コード品質, review this PR, review my code, review these changes,
   check my code, analyze this code, コードを見て, レビューして.
   Also trigger for: /ultimate-code-review, /review, /code-review.
+  Also trigger for: /review --path, /review --package, /review --base, /review --staged.
   Do NOT trigger when: the user asks to write new code, refactor code
   (without review intent), explain code, debug a specific error, run tests,
   generate documentation, or asks a general programming question.
@@ -26,7 +27,7 @@ description: |
 
 | モード | 用途 | 所要時間 | 使用場面 |
 |--------|------|---------|---------|
-| **full** | 全25視点 + 全6メタ分析 | 18-25分 | PR前、重要機能 |
+| **full** | 全29視点 + 全9メタ分析 | 25-35分（1チャンク分） | PR前、重要機能 |
 | **focus** | 指定カテゴリのみ | 5-8分 | 特定の懸念がある時 |
 | **quick** | CRITICAL/HIGH検出のみ | 3-5分 | 軽微な変更 |
 
@@ -34,14 +35,36 @@ description: |
 `/ultimate-code-review focus security` → セキュリティ視点集中
 `/ultimate-code-review quick` → 高速スキャン
 
+**スケール自動対応**: 変更ファイルが30件を超えると、チャンク完全分析モードに自動移行。
+品質は一切落とさず、全ファイルを29視点で完全レビュー（所要時間は増加）。
+詳細は `references/scale-strategy.md` を参照。
+
+---
+
+## スコープオプション（任意）
+
+デフォルトは `git diff HEAD~1 HEAD` の全変更ファイルが対象。以下のオプションでスコープを絞れる:
+
+| オプション | 説明 | 例 |
+|-----------|------|-----|
+| `--path <dir>` | 指定パス以下のみ対象 | `/review --path src/auth` |
+| `--package <name>` | モノレポの特定パッケージのみ | `/review --package api` |
+| `--base <ref>` | 差分ベースリビジョンを指定 | `/review --base main` |
+| `--staged` | ステージング済みファイルのみ | `/review --staged` |
+
+オプションは組み合わせ可能: `/review focus security --path src/auth`
+
+**注**: スコープを絞らなくても、大規模PRは自動的にチャンク完全分析で対応する。
+
 ---
 
 ## 実行前チェックリスト
 
 - [ ] 変更ファイルのスコープは明確か（git diff / ステージング済みファイル）
-- [ ] プロジェクトルートで実行しているか（モノレポは適切なサブディレクトリ）
+- [ ] プロジェクトルートで実行しているか
 - [ ] レビューモードは適切か（full / focus / quick）
 - [ ] 対象コードはビルドが通る状態か（構文エラーがあると分析精度が低下）
+- [ ] 変更ファイルが多い場合: `--path` や `--package` でスコープを絞れば時間を短縮できる（任意）
 
 ---
 
@@ -50,11 +73,15 @@ description: |
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ Phase 0: プロジェクト知性の獲得（1-2分）                      │
+│  Step 0: スケール検出 & チャンク計画                          │
+│  → references/scale-strategy.md を参照                     │
 │  → references/project-intelligence.md を参照               │
 └─────────────────────────────────────────────────────────────┘
                       ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ Phase 1: 並列29視点分析（5エージェント同時起動）              │
+│ Phase 1: 29視点完全分析（チャンク対応）                        │
+│  変更ファイル ≤ 30: 5エージェント一括実行（従来通り）            │
+│  変更ファイル > 30: チャンク別に完全分析 × N回（20件/チャンク）  │
 │  Agent-A: カテゴリA 視点1-6   → references/perspective-A.md │
 │  Agent-B: カテゴリB 視点7-13  → references/perspective-B.md │
 │  Agent-C: カテゴリC 視点14-19 → references/perspective-C.md │
@@ -104,6 +131,18 @@ description: |
 
 ### 実行手順
 
+**ステップ0: スケール検出 & チャンク計画**（`references/scale-strategy.md` を参照）
+
+0-a. **引数解析**: `--path` / `--package` / `--base` / `--staged` を抽出する
+0-b. **変更ファイルリスト取得**: git diff でスコープファイルを取得し、フィルタを適用する
+0-c. **スケール判定**: ファイル数をカウントし SCALE_CONTEXT を生成する
+0-d. **モノレポ検出**: `nx.json` / `turbo.json` / `pnpm-workspace.yaml` / `go.work` / `Cargo.toml[workspace]` を確認する
+0-e. **チャンク計画**: ファイル数 > 30 の場合、20件ごとのチャンクに分割する（関連ファイルを優先的に同一チャンクにまとめる）
+0-f. **所要時間告知**: チャンク数 × 推定時間をユーザーに提示する
+   例: `45ファイル検出 → 3チャンク → 推定 65-90分`
+
+---
+
 1. **ドキュメント読み込み**
    - `README.md` / `CLAUDE.md` → ビジネス文脈・要件
    - `docs/design/` → 設計書（あれば）
@@ -136,11 +175,23 @@ description: |
 
 ---
 
-## Phase 1: 29視点並列分析
+## Phase 1: 29視点完全分析
+
+### 実行方法（スケールに応じて自動選択）
+
+**変更ファイル ≤ 30（通常モード）**: 並列エージェント実行が可能な場合は5エージェントを同時起動する。並列実行が利用できない環境では A→B→C→D→E の順で逐次実行し、結果を統合する。
+
+**変更ファイル > 30（チャンク完全分析モード）**: `references/scale-strategy.md` のチャンク完全分析プロトコルに従う。各チャンクに対して下記と同じ5エージェント×29視点の完全分析を実行し、全チャンクの findings を結合してから Phase 1.5 へ進む。
+
+進捗をユーザーに表示する:
+```
+[チャンク 1/3 処理中] ファイル1〜20 ...
+[チャンク 2/3 処理中] ファイル21〜40 ...
+[チャンク 3/3 処理中] ファイル41〜45 ...
+[全チャンク完了] findings 結合中 → Phase 1.5 へ
+```
 
 ### 5エージェント同時起動
-
-**実行方法**: 並列エージェント実行が可能な場合は5エージェントを同時起動する。並列実行が利用できない環境では A→B→C→D→E の順で逐次実行し、結果を統合する。
 
 ```
 Agent-A（カテゴリA: ユーザー価値）:
@@ -387,12 +438,35 @@ CRITICAL: ハードコードされたAPIキー検出 — src/config.ts:5
 4. レポートの `🔤 言語固有レビュー結果` セクションに警告を記載:
    `⚠️ [言語名] は未対応言語です。言語固有の深層チェックは実施されていません。`
 
+### F-5: チャンク処理中にエージェントがタイムアウト（チャンク完全分析モードのみ）
+
+**症状**: チャンク N のエージェントが空の出力を返す、または応答が極端に遅い。
+**原因**: そのチャンクに含まれるファイルが大きすぎる（1ファイルが1万行超など）。
+**回復手順**: `references/scale-strategy.md` の F-5 プロトコルを参照。
+1. そのチャンク（20件）をさらに10件×2チャンクに分割して再投入する
+2. 成功した場合は findings を蓄積して残りのチャンクを続行する
+3. 再度失敗した場合: そのファイルを「手動レビュー推奨」としてレポートに記録し、残りのチャンクは続ける
+
+### F-6: モノレポのパッケージ境界が不明確（チャンク完全分析モードのみ）
+
+**症状**: ファイルがどのパッケージに属するか判定できない（ルートファイル等）。
+**回復手順**: `references/scale-strategy.md` の F-6 プロトコルを参照。
+1. ルートファイルは「インフラファイル」として分類し通常のディレクトリ順グループ化にフォールバック
+
+### F-7: --path / --package フィルタが 0 件にマッチ
+
+**症状**: 指定したパスに変更ファイルが存在しない。
+**回復手順**: `references/scale-strategy.md` の F-7 プロトコルを参照。
+1. エラーメッセージを表示し、変更ファイルの候補リストを提示する
+2. フィルタなしで続行するかユーザーに確認する
+
 ---
 
 ## リファレンスファイル
 
 | ファイル | 役割 |
 |---------|------|
+| `references/scale-strategy.md` | Phase 0 Step 0: スケール検出・チャンク完全分析・モノレポ検出プロトコル |
 | `references/project-intelligence.md` | Phase 0: タイプ判定・重み付けルール |
 | `references/perspective-A.md` | 視点1-6の詳細チェックリスト（セキュリティ: OWASP全網羅） |
 | `references/perspective-B.md` | 視点7-13の詳細チェックリスト（SOLID完全版・テストピラミッド） |
