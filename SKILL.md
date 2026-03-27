@@ -25,11 +25,11 @@ description: |
 
 ## 3つの実行モード
 
-| モード | 用途 | 所要時間 | 使用場面 |
-|--------|------|---------|---------|
-| **full** | 全29視点 + 全9メタ分析 | 25-35分（1チャンク分） | PR前、重要機能 |
-| **focus** | 指定カテゴリのみ | 5-8分 | 特定の懸念がある時 |
-| **quick** | CRITICAL/HIGH検出のみ | 3-5分 | 軽微な変更 |
+| モード | 用途 | 並列実行（理想） | 逐次実行（一般環境） | 推奨場面 |
+|--------|------|----------------|-------------------|---------|
+| **full** | 全29視点 + 全9メタ分析 | 25-35分 | 45-70分 | PR前、重要機能 |
+| **focus** | 指定カテゴリのみ | 5-8分 | 12-20分 | 特定の懸念がある時 |
+| **quick** | CRITICAL/HIGH検出のみ | 3-5分 | 5-8分 | デイリー推奨 |
 
 引数なし → full モード
 `/ultimate-code-review focus security` → セキュリティ視点集中
@@ -353,10 +353,10 @@ CRITICAL/HIGH 問題検出
     ↓
 auto-fix-playbook.md でパターンマッチング
     ↓
-修正可能 → 自動修正 → lint/typecheck/test/build で検証
+修正可能 → diff表示 → ユーザー確認（y/n）
+   ↓ y: 自動修正 → lint/typecheck/test/build → 再スキャン（修正済み問題を除外）
+   ↓ n: [MANUAL REQUIRED] タグ付きでレポートに追加
 修正不可 → [MANUAL REQUIRED] タグ付きでレポートに追加
-    ↓
-再スキャン（修正済み問題を除外）
 ```
 
 ---
@@ -463,6 +463,21 @@ CRITICAL: ハードコードされたAPIキー検出 — src/config.ts:5
 ---
 
 ## リファレンスファイル
+
+### モード別読み込み方針
+
+コンテキスト消費を最小化するため、実行モードに応じて読み込むファイルを絞る。
+
+| フェーズ | full | focus | quick |
+|---------|------|-------|-------|
+| Phase 0 | scale-strategy.md + project-intelligence.md | 同左 | scale-strategy.md のみ |
+| Phase 1 | perspective-A〜E.md（5件） | 指定カテゴリの1件のみ | スキップ（SKILL.md内ルールで実行） |
+| Phase 1.5 | detector.md + 対象言語.md | 同左 | detector.md + 対象言語.md（CRITICAL/HIGHのみ） |
+| Phase 2（2-1〜2-7） | meta-analysis.md | meta-analysis.md | スキップ |
+| Phase 2-8（自動修正） | auto-fix-playbook.md | 同左 | auto-fix-playbook.md |
+| Phase 3 | executive-synthesis.md | 同左 | スキップ（簡易サマリーのみ出力） |
+
+### ファイル一覧
 
 | ファイル | 役割 |
 |---------|------|
