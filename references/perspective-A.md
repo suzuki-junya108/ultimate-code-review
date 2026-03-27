@@ -118,6 +118,231 @@ res.json({ error: error.stack }) // 危険
 - [ ] ログに機密情報（パスワード, トークン, APIキー, PII）が出力されていないか
 - [ ] エラーレスポンスに内部実装の詳細が含まれていないか
 
+### CSRF（Cross-Site Request Forgery）
+
+```typescript
+// 検出: 状態変更エンドポイントにCSRF保護がない
+app.post('/api/transfer', handler); // CSRFトークン検証なし
+app.put('/api/users/:id', handler); // SameSiteチェックなし
+```
+
+- [ ] POST/PUT/PATCH/DELETE エンドポイントにCSRFトークン検証があるか（Cookie認証使用時）
+- [ ] Cookieに `SameSite=Strict` または `SameSite=Lax` が設定されているか
+- [ ] `X-CSRF-Token` ヘッダーの検証があるか
+- [ ] Authorizationヘッダーのみ使用（Cookieless）の場合はCSRF不要であることを確認
+
+### Clickjacking防止
+
+- [ ] `X-Frame-Options: DENY` ヘッダーが設定されているか
+- [ ] CSP の `frame-ancestors 'none'` ディレクティブがあるか
+- [ ] 上記いずれかで iframe埋め込みが防止されているか
+
+### セキュリティヘッダー完全チェック
+
+必須ヘッダーの確認:
+
+```
+Content-Security-Policy:
+  - unsafe-inline / unsafe-eval が含まれていないか
+  - default-src が 'self' に限定されているか
+X-Frame-Options: DENY
+X-Content-Type-Options: nosniff
+Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+Referrer-Policy: strict-origin-when-cross-origin
+Permissions-Policy: camera=(), microphone=(), geolocation=()
+```
+
+- [ ] 上記6ヘッダーが全て設定されているか（helmet.js等）
+- [ ] CSPに `unsafe-inline` または `unsafe-eval` が使われていないか
+
+### A08:2021 ソフトウェア・データ整合性の不具合
+
+```typescript
+// 危険: ユーザー入力を直接評価
+eval(userInput);
+Function(userInput)();
+require(dynamicPath);  // パス操作可能
+
+// 危険: デシリアライズ後に型検証なし
+const data = JSON.parse(rawInput); // 型がunknownのまま使用
+
+// 危険: 外部CDNからSRIハッシュなしで読み込み
+<script src="https://cdn.example.com/lib.js"></script>
+```
+
+- [ ] `eval()` / `Function()` にユーザー入力が流れていないか
+- [ ] `require(dynamicPath)` でパスにユーザー入力が混入していないか
+- [ ] `JSON.parse(userInput)` 後にzod等のランタイム型検証があるか
+- [ ] 外部CDNスクリプトにSubResource Integrity (SRI) ハッシュがあるか
+
+### A09:2021 セキュリティログおよびモニタリングの失敗
+
+- [ ] 認証失敗（ログイン失敗、不正アクセス試行）がログに記録されているか
+- [ ] セキュリティイベント（権限エラー、レート制限超過）がモニタリングされているか
+- [ ] ログが改ざん防止されているか（append-only、外部転送）
+- [ ] 重大なセキュリティイベントにアラートが設定されているか
+
+### A10:2021 SSRF（Server-Side Request Forgery）
+
+```typescript
+// 危険: ユーザー入力をURLとして使用
+const data = await fetch(req.body.url);
+const result = await axios.get(req.query.callback);
+const webhook = await http.get(userProvidedEndpoint);
+
+// 特に危険: クラウドメタデータエンドポイント
+// http://169.254.169.254/latest/meta-data/ → AWSクレデンシャル取得可能
+```
+
+- [ ] `fetch` / `axios` / `http.get` 等のURL引数にユーザー入力が流れていないか
+- [ ] Webhookエンドポイントのドメイン検証があるか（allowlist方式）
+- [ ] プライベートIPアドレス（10.x, 172.16-31.x, 192.168.x, 169.254.x, localhost）への接続を防止しているか
+
+### Mass Assignment脆弱性
+
+```typescript
+// 危険: req.body を直接DBに渡す
+const user = { ...req.body };
+await db.user.create(user); // isAdmin: true が混入可能
+
+// 危険: ORMの全フィールド更新
+await User.update(req.body, { where: { id } }); // role等が混入可能
+
+// 推奨: ホワイトリスト方式
+const allowedFields = ['email', 'name', 'bio'];
+const safeData = pick(req.body, allowedFields);
+await db.user.update(safeData, { where: { id } });
+```
+
+- [ ] `req.body` を直接DB操作に渡していないか
+- [ ] 更新可能フィールドがホワイトリストで制限されているか
+- [ ] TypeScriptの型キャストだけでは防げないことを認識しているか（`req.body as UpdateUserDTO`）
+
+### Open Redirect
+
+```typescript
+// 危険
+res.redirect(req.query.next as string);
+res.redirect(req.body.returnUrl);
+window.location.href = userProvidedUrl;
+```
+
+- [ ] リダイレクト先URLにユーザー入力が使われていないか
+- [ ] 使う場合は origin が allowlist に含まれるか検証しているか
+- [ ] 相対パスのみ許可する制限があるか
+
+### ReDoS（正規表現サービス拒否攻撃）
+
+```typescript
+// 危険: 指数時間の正規表現（Catastrophic Backtracking）
+/^(a+)+$/  // "aaaaaaaaab"で指数時間
+/(a|aa)+$/  // 類似のパターン
+/^([a-zA-Z0-9]+([._]?[a-zA-Z0-9]+)*@...)+$/  // 複雑なメール検証
+
+// 危険: ユーザー入力を正規表現として使用
+const userRegex = new RegExp(userInput); // ReDoS攻撃の入口
+```
+
+- [ ] ユーザー入力が `new RegExp()` に渡されていないか
+- [ ] 量化子の入れ子（`(a+)+`, `(a|aa)+`等）がないか
+- [ ] 長い入力でもタイムアウトしない正規表現か（`safe-regex` ライブラリで検証推奨）
+
+### DOM-based XSS（フロントエンド）
+
+```typescript
+// 危険: ユーザー入力をDOMに直接挿入
+element.innerHTML = userInput;
+element.outerHTML = userInput;
+document.write(userInput);
+
+// フレームワーク固有の危険パターン
+<div dangerouslySetInnerHTML={{ __html: content }} />  // React
+<div v-html="content"></div>  // Vue
+```
+
+- [ ] `innerHTML` / `outerHTML` / `document.write` にユーザー入力が流れていないか
+- [ ] `dangerouslySetInnerHTML` の使用箇所はDOMPurifyでサニタイズされているか
+- [ ] `v-html` の使用箇所はサニタイズされているか
+
+### タイミング攻撃（Timing Attack）
+
+```typescript
+// 危険: 通常の文字列比較（文字一致するほど時間が長くなる）
+if (token === storedToken) { }
+if (apiKey === process.env.API_KEY) { }
+if (signature === expectedSignature) { }
+
+// 安全: 定時間比較
+import { timingSafeEqual } from 'crypto';
+const match = timingSafeEqual(
+  Buffer.from(providedToken),
+  Buffer.from(storedToken)
+);
+```
+
+- [ ] トークン/署名の比較に `crypto.timingSafeEqual()` を使っているか
+- [ ] パスワード比較に `bcrypt.compare()` を使っているか
+- [ ] ユーザー存在確認でタイミング差が生じていないか（"User not found" vs "Wrong password"）
+
+### JWT固有攻撃
+
+```typescript
+// 危険: アルゴリズム指定なし（alg:none 攻撃可能）
+jwt.verify(token, secret);
+
+// 危険: JKU/X5U ヘッダーの検証なし
+// 攻撃者が独自の公開鍵URLを指定してトークン検証を迂回可能
+
+// 安全:
+jwt.verify(token, publicKey, {
+  algorithms: ['RS256'],  // none を含めない、許可アルゴリズムを明示
+});
+```
+
+- [ ] `jwt.verify()` の `algorithms` オプションで許可アルゴリズムを明示しているか
+- [ ] `"none"` アルゴリズムを許可していないか
+- [ ] JWTの秘密鍵が十分に長く、ランダムか（`"secret"` や `"password"` でないか）
+- [ ] JKU/X5U ヘッダーの検証があるか（使用する場合）
+
+### OWASP API Security Top 10（API特有）
+
+**API3: Broken Object Property Level Authorization（過剰なデータ公開）**
+```typescript
+// 危険: DBオブジェクトをそのままレスポンス
+const user = await db.user.findById(id);
+res.json(user); // password, internalHash, role等が漏洩
+
+// 安全: 必要フィールドのみ返す
+const { id, name, email } = user;
+res.json({ id, name, email });
+```
+
+- [ ] APIレスポンスに内部フィールド（ハッシュ値、内部ID、権限情報）が含まれていないか
+- [ ] GraphQLでintrospectionが本番環境で無効化されているか
+
+**API4: Unrestricted Resource Consumption**
+```typescript
+// 危険: ページング上限なし
+const items = await db.items.findAll({ limit: req.query.limit }); // 無制限
+
+// 安全: 最大値を強制
+const limit = Math.min(Number(req.query.limit) || 20, 100);
+const items = await db.items.findAll({ limit });
+```
+
+- [ ] 一覧取得APIにページング上限があるか（最大100件等）
+- [ ] ファイルアップロードのサイズ制限があるか
+- [ ] リクエストボディのサイズ制限があるか
+
+**API5: Broken Function Level Authorization**
+- [ ] 全HTTPメソッド（GET/POST/PUT/PATCH/DELETE）に権限チェックがあるか
+- [ ] 同一リソースで、メソッドによって権限チェックが漏れていないか
+
+**API9: Improper Inventory Management（シャドーAPI）**
+- [ ] 古いAPIバージョン（/v1/）が廃止後も残っていないか
+- [ ] ドキュメントにないエンドポイント（シャドーAPI）がないか
+- [ ] デバッグ用エンドポイントが本番に残っていないか
+
 ---
 
 ## 視点3: パフォーマンス

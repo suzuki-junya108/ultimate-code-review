@@ -297,6 +297,64 @@ URLの設計原則:
 - [ ] HTTPステータスコードが適切か（200, 201, 400, 401, 403, 404, 422, 500）
 - [ ] クライアントが必要な情報を含むエラーメッセージか
 
+### GraphQL固有チェック（GraphQL使用時）
+
+```typescript
+// 危険1: Introspection が本番で有効
+// → スキーマ全体が露出、攻撃者に型情報を提供
+// 対策: Apollo Server の introspection: process.env.NODE_ENV !== 'production'
+
+// 危険2: Depth Limiting なし
+// → 深くネストされたクエリでDOS攻撃
+// query { user { friends { friends { friends { ... } } } } }
+// 対策: graphql-depth-limit, max-depth: 5
+
+// 危険3: Query Complexity 計算なし
+// → 100件×100件のネストでN^2クエリ
+// 対策: graphql-query-complexity
+
+// 危険4: フィールドレベルの認可なし
+// → adminフィールドがユーザーに見える
+type User { id: ID!, email: String!, salary: Int! } // salaryが全員に見える
+```
+
+- [ ] 本番環境でIntrospectionが無効化されているか
+- [ ] Depth Limitingが実装されているか（推奨: max depth 5-10）
+- [ ] Query Complexityの制限が実装されているか
+- [ ] フィールドレベルの認可チェックがあるか（resolver単位）
+- [ ] BatchリクエストへのRate Limitが適用されているか
+- [ ] N+1問題がDataLoaderで解決されているか
+
+### WebSocket固有チェック（WebSocket使用時）
+
+```typescript
+// 危険: 接続後に認証しない
+io.on('connection', (socket) => {
+  socket.on('message', handleMessage); // 認証なし → 誰でも使える
+});
+
+// 推奨: 接続時に認証
+io.use((socket, next) => {
+  const token = socket.handshake.auth.token;
+  try { socket.data.user = jwt.verify(token, secret); next(); }
+  catch { next(new Error('Unauthorized')); }
+});
+
+// 危険: CSRF（WebSocketはSame-Origin Policyの対象外）
+// → Originヘッダーの検証が必要
+io.use((socket, next) => {
+  const origin = socket.handshake.headers.origin;
+  if (!ALLOWED_ORIGINS.includes(origin)) return next(new Error('Forbidden'));
+  next();
+});
+```
+
+- [ ] WebSocket接続確立時に認証が行われているか（handshake時にトークン検証）
+- [ ] OriginヘッダーのCSRF検証があるか（WebSocketはCORSポリシー非適用）
+- [ ] メッセージに対して入力バリデーションが実施されているか
+- [ ] クライアントごとのRate Limitが実装されているか
+- [ ] 切断・再接続時のセッション管理が適切か
+
 ---
 
 ## 視点25: オンボーディング品質
@@ -343,3 +401,89 @@ await nextEngineClient.refreshLoginToken({
 - [ ] 開発用のシードデータが整備されているか
 - [ ] デバッグのやりやすさが考慮されているか（ログが読みやすい等）
 - [ ] よくある問題とその解決方法がドキュメント化されているか（TROUBLESHOOTING）
+
+---
+
+## 視点26: サプライチェーンセキュリティ
+
+ソフトウェアの外部依存を通じた攻撃（SolarWinds型）を検出する。
+
+### 依存パッケージの健全性
+
+```bash
+# lockファイルの完全性確認（存在しない場合は危険）
+ls package-lock.json yarn.lock pnpm-lock.yaml 2>/dev/null
+
+# lockファイルなしのインストールは再現性がない
+npm install  # lockファイルなし → 悪意あるバージョンが入る可能性
+
+# 依存関係の脆弱性スキャン
+pnpm audit --audit-level=critical 2>/dev/null || npm audit --audit-level=critical 2>/dev/null
+
+# タイポスクワッティング検出（よく間違えるパッケージ名）
+# 例: lodas（lodash）, reqest（request）, expresss（express）
+```
+
+**Dependency Confusion攻撃の検出:**
+```
+攻撃手順:
+1. 内部パッケージ名（@company/internal-auth）をnpmに公開
+2. 高いバージョン番号（99.0.0）を設定
+3. npm/pnpmがprivate registryより公開npmを優先インストール
+4. 悪意あるコードが実行される
+
+対策:
+- .npmrc に always-auth=true および private registry設定
+- package.json の "private": true フィールド
+- スコープ付きパッケージ（@company/）に private registryを強制
+```
+
+- [ ] package-lock.json / yarn.lock / pnpm-lock.yaml が存在しcoミットされているか
+- [ ] lockファイルを無視したインストール（--no-lockfile, --ignore-scripts=false）が行われていないか
+- [ ] 内部パッケージ名がnpmに悪意ある同名パッケージを登録されるリスクがないか
+- [ ] `npm install` の `--ignore-scripts` が設定されているか（postinstallスクリプト防止）
+- [ ] .npmrcで信頼できるレジストリのみが設定されているか
+
+### git履歴のシークレットスキャン
+
+```bash
+# 現在のコードにシークレットが含まれていないか
+# パターン例（実際にはgit-secrets/truffleHog等のツール推奨）
+grep -r "sk-\|AKIA\|ghp_\|ghs_\|-----BEGIN" --include="*.ts" --include="*.js" --include="*.env*" . 2>/dev/null
+
+# gitの全履歴でシークレットが混入していないか（現在は削除されていても）
+# trufflehog git file://. --since-commit HEAD~10 2>/dev/null
+# git-secrets --scan-history 2>/dev/null
+```
+
+**検出すべきシークレットパターン:**
+```
+AWS: AKIA[0-9A-Z]{16}
+GitHub Token: gh[ps]_[A-Za-z0-9]{36}
+OpenAI: sk-[A-Za-z0-9]{48}
+Stripe: sk_live_[A-Za-z0-9]{24}
+Generic: password=, secret=, api_key= (大文字小文字混在)
+Private Key: -----BEGIN (RSA|EC|OPENSSH) PRIVATE KEY-----
+```
+
+- [ ] .envファイルがgitにコミットされていないか（`.gitignore`に.env系が含まれているか）
+- [ ] git履歴にシークレットが含まれていないか（現在削除済みでも履歴に残る）
+- [ ] pre-commit hookでシークレットの混入を防止しているか（git-secrets, detect-secrets）
+- [ ] CI/CDでシークレットスキャンが実行されているか（TruffleHog, GitLeaks等）
+
+### 依存パッケージの更新戦略
+
+```
+リスク別更新優先度:
+1. セキュリティパッチ（CVE付き）→ 即座に更新（7日以内）
+2. マイナーアップデート → 月1回レビュー
+3. メジャーアップデート → 四半期レビュー + 動作確認
+
+自動更新ツール:
+- Dependabot（GitHub）: 自動PRを作成
+- Renovate: より細かな設定が可能
+```
+
+- [ ] Dependabot / Renovateが設定されているか（依存関係の自動更新）
+- [ ] セキュリティアドバイザリに対して迅速に対応できる体制があるか
+- [ ] ピン留めされた依存バージョンが古すぎないか（1年以上更新なしは要確認）

@@ -1,8 +1,8 @@
 # Ultimate Code Review — Claude Code Skill
 
-**25視点の並列分析 + 8つのメタ分析**による、Claude Code向け最強コードレビュースキル。
+**29視点の並列分析 + 9つのメタ分析**による、Claude Code向け最強コードレビュースキル。
 
-他のツールにはない「3次元飛躍」（赤チーム分析・ビジネス価値検証・認知負荷評価）で、単なる構文チェックを超えた本質的なコード品質を評価します。
+OWASP/CWE/NIST/Google SRE Book/GDPR/CCPA/CIS Benchmark等、世界中のセキュリティ標準・SREベストプラクティスを網羅。他のツールにはない「3次元飛躍」（赤チーム分析・ビジネス価値検証・認知負荷評価）で、単なる構文チェックを超えた本質的なコード品質を評価します。
 
 ---
 
@@ -10,14 +10,18 @@
 
 | 機能 | 説明 |
 |------|------|
-| **25視点並列分析** | 4エージェントが同時起動し、ユーザー価値・開発者体験・運用・深層技術品質を網羅 |
+| **29視点並列分析** | 5エージェントが同時起動し、ユーザー価値・開発者体験・運用・深層品質・横断品質を網羅 |
+| **OWASP Web + API Top 10完全網羅** | CSRF, SSRF, Mass Assignment, ReDoS, DOM XSS, JWT攻撃, API特有脆弱性を含む全20項目 |
+| **SOLID原則完全版** | SRPだけでなくOCP/LSP/ISP/DIPも含む全5原則を検証 |
+| **テスト品質分析** | テストピラミッド比率・Contract Testing・Mutation Testing（Stryker）を評価 |
+| **OpenTelemetry/Prometheus品質** | メトリクス命名規則・Label Cardinality爆発・分散トレーシング整合性を検証 |
+| **サプライチェーンセキュリティ** | Dependency Confusion・lockファイル整合性・シークレットgit履歴スキャンを実施 |
+| **GDPR/CCPA実装確認** | 削除権（hard delete）・データポータビリティ・PII検出・Cookie同意を検証 |
+| **SRE信頼性工学** | Circuit Breaker・タイムアウト階層・冪等性・SLO/エラーバジェットを評価 |
+| **インフラ/コンテナセキュリティ** | Dockerfile CIS Benchmark・GitHub Actions SHA pinning・Kubernetes PSS を確認 |
 | **赤チーム分析** | 攻撃者・障害担当者の視点でシステムの弱点を特定 |
-| **進化適応分析** | gitログからフラジリティスコアを算出し「壊れやすい箇所」を定量化 |
-| **ビジネス価値検証** | 「このコードを削除したら何が困るか？」で不要なコードを特定 |
-| **変更容易性測定** | 変更増幅係数（1つの変更で何ファイルの修正が必要か）を測定 |
-| **認知負荷評価** | Miller's Lawを適用し「理解しにくいコード」を定量化 |
-| **不作為コスト分析** | 問題を放置した場合の時間軸別影響を予測 |
-| **自動修正** | CRITICAL/HIGH問題を自動修正しlint/typecheck/test/buildで検証 |
+| **SLOインパクト評価** | デプロイ戦略（即時/カナリア/フィーチャーフラグ）をリスクベースで提言 |
+| **自動修正（30パターン）** | CRITICAL/HIGH問題を自動修正しlint/typecheck/test/buildで検証 |
 
 ---
 
@@ -81,13 +85,14 @@
 ```
 Phase 0: プロジェクト知性の獲得（プロジェクトタイプ・フェーズ判定）
     ↓
-Phase 1: 25視点並列分析（4エージェント同時起動）
-    Agent-A: カテゴリA（機能的正確性・セキュリティ・パフォーマンス・アクセシビリティ・i18n・エラーハンドリング）
-    Agent-B: カテゴリB（アーキテクチャ・コード品質・テスタビリティ・依存関係・ドキュメント・保守性・型設計）
-    Agent-C: カテゴリC（技術的負債・可観測性・CI/CD・ライセンス・スケーラビリティ・後方互換性）
-    Agent-D: カテゴリD（複雑度・データモデル・設定管理・並行処理・API設計・オンボーディング）
+Phase 1: 29視点並列分析（5エージェント同時起動）
+    Agent-A: カテゴリA（機能的正確性・セキュリティ全網羅・パフォーマンス・アクセシビリティ・i18n・エラーハンドリング）
+    Agent-B: カテゴリB（アーキテクチャ/SOLID完全版・コード品質・テスタビリティ/テストピラミッド・依存関係・ドキュメント・保守性・型設計）
+    Agent-C: カテゴリC（技術的負債・可観測性/OpenTelemetry・CI/CD/GitHub Actions/Dockerfile・ライセンス・スケーラビリティ・後方互換性）
+    Agent-D: カテゴリD（複雑度・データモデル・設定管理・並行処理・API設計/GraphQL/WebSocket・オンボーディング・サプライチェーン）
+    Agent-E: カテゴリE（プライバシー/GDPR・SRE/信頼性工学・インフラ/コンテナセキュリティ）
     ↓
-Phase 2: 8つのメタ分析
+Phase 2: 9つのメタ分析
     2-1: 視点間相関検出（根本原因の特定）
     2-2: 赤チーム分析（攻撃・障害シナリオ）
     2-3: 進化適応分析（フラジリティスコア）
@@ -96,6 +101,7 @@ Phase 2: 8つのメタ分析
     2-6: 変更容易性測定（変更増幅係数）
     2-7: 認知負荷評価（Miller's Law適用）
     2-8: CRITICAL/HIGH問題の自動修正 + 再検証
+    2-9: SLOインパクト評価（デプロイリスク・推奨戦略）
     ↓
 Phase 3: エグゼクティブレポート生成
 ```
@@ -151,12 +157,13 @@ processOrder() - 前提知識数: 9（上限7を超過）→ 分割推奨
 ├── README.md                         # このファイル
 └── references/
     ├── project-intelligence.md       # Phase 0: タイプ判定・重み付けルール
-    ├── perspective-A.md              # 視点1-6（ユーザー価値）
-    ├── perspective-B.md              # 視点7-13（開発者体験）
-    ├── perspective-C.md              # 視点14-19（運用・成長）
-    ├── perspective-D.md              # 視点20-25（深層技術品質）
-    ├── meta-analysis.md              # 8つのメタ分析ガイド
-    ├── auto-fix-playbook.md          # 自動修正ルールブック
+    ├── perspective-A.md              # 視点1-6（ユーザー価値・OWASP全網羅）
+    ├── perspective-B.md              # 視点7-13（開発者体験・SOLID完全版・テストピラミッド）
+    ├── perspective-C.md              # 視点14-19（運用・成長・GitHub Actions・Dockerfile）
+    ├── perspective-D.md              # 視点20-26（深層技術品質・GraphQL/WebSocket・サプライチェーン）
+    ├── perspective-E.md              # 視点27-29（GDPR・SRE信頼性工学・インフラセキュリティ）
+    ├── meta-analysis.md              # 9つのメタ分析ガイド（SLOインパクト評価含む）
+    ├── auto-fix-playbook.md          # 自動修正ルールブック（30パターン）
     └── executive-synthesis.md        # レポート生成ガイド
 ```
 

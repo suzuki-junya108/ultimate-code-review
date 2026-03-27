@@ -31,11 +31,92 @@
 - [ ] 循環依存がないか
 - [ ] DIP（依存性逆転原則）が守られているか（上位が下位の具体実装に依存していない）
 
-### 単一責任原則（SRP）
+### SOLID原則の完全チェック
+
+#### 単一責任原則（SRP: Single Responsibility Principle）
 
 - [ ] クラス/モジュールは1つの責任のみを持つか
 - [ ] 関数は1つのことだけを行うか
 - [ ] ファイルサイズが300行を超えていないか（超える場合は分割を検討）
+
+#### 開放/閉鎖原則（OCP: Open/Closed Principle）
+
+```typescript
+// 違反: 新しい型を追加するたびにif/elseが増える
+function calculateDiscount(type: string, price: number): number {
+  if (type === "student") return price * 0.8;
+  if (type === "senior") return price * 0.7;
+  if (type === "employee") return price * 0.5;
+  // 新しい割引タイプ追加のたびにこの関数を変更する必要がある
+  return price;
+}
+
+// 推奨: 拡張に対して開いている（既存コードを変更せずに追加可能）
+interface DiscountStrategy { apply(price: number): number; }
+class StudentDiscount implements DiscountStrategy { apply = (p) => p * 0.8; }
+class SeniorDiscount implements DiscountStrategy { apply = (p) => p * 0.7; }
+// 新割引 → 新クラスを追加するだけ。既存コード変更不要
+```
+
+- [ ] 新しい種別・タイプの追加が既存コードの変更なしにできるか（Strategy/Polymorphism）
+- [ ] 長いif-else/switchチェーンが「新機能追加で必ず変更が必要」になっていないか
+
+#### リスコフ置換原則（LSP: Liskov Substitution Principle）
+
+```typescript
+// 違反: サブクラスが親クラスの契約を破る
+class Rectangle { setWidth(w: number) {} setHeight(h: number) {} }
+class Square extends Rectangle {
+  setWidth(w: number) { this.width = this.height = w; } // 高さも変わる！
+  // Square はRectangleを置き換えられない → LSP違反
+}
+
+// チェック: サブクラスが親クラスのテストケースを全て通過するか
+// → 「IS-A」より「CAN-DO-WHAT」で継承の妥当性を判断
+```
+
+- [ ] サブクラスが親クラスの事前条件・事後条件・不変条件を守っているか
+- [ ] 継承よりコンポジションを優先しているか（過度な継承階層に注意）
+- [ ] `instanceof` チェックが多用されていないか（LSP違反のサイン）
+
+#### インターフェース分離原則（ISP: Interface Segregation Principle）
+
+```typescript
+// 違反: 巨大インターフェース（使わないメソッドへの依存を強制）
+interface Worker {
+  work(): void;
+  eat(): void;  // ロボットには不要
+  sleep(): void; // ロボットには不要
+}
+
+// 推奨: 最小限のインターフェース分割
+interface Workable { work(): void; }
+interface Eatable { eat(): void; }
+interface Sleepable { sleep(): void; }
+class HumanWorker implements Workable, Eatable, Sleepable { ... }
+class Robot implements Workable { ... } // 不要なメソッドを実装しなくてよい
+```
+
+- [ ] インターフェースが過度に大きくないか（未使用メソッドを実装させていないか）
+- [ ] クライアントが使わないメソッドに依存させられていないか
+
+#### 依存性逆転原則（DIP: Dependency Inversion Principle）
+
+```typescript
+// 違反: 上位モジュールが下位実装に依存
+class OrderService {
+  private db = new MySQLDatabase(); // 具体実装に直接依存 → テスト不可
+}
+
+// 推奨: 上位モジュールは抽象に依存
+interface IDatabase { query(sql: string): Promise<unknown>; }
+class OrderService {
+  constructor(private db: IDatabase) {} // 抽象に依存 → テスト可能
+}
+```
+
+- [ ] Service層がRepositoryの具体実装ではなくインターフェースに依存しているか
+- [ ] DIコンテナや依存注入パターンが適切に使われているか
 
 ### 既存パターンとの一貫性
 
@@ -150,6 +231,70 @@ it("should persist the user when valid data is provided", async () => {
 - [ ] テストが独立して実行できるか（テスト間に依存がない）
 - [ ] フレイキーテスト（不安定なテスト）がないか
 - [ ] エッジケース・境界値のテストがあるか
+
+### テストピラミッド比率の評価
+
+```
+理想的なテストピラミッド:
+  E2E/UI テスト:        10% — 遅い・壊れやすい、クリティカルフローのみ
+  統合テスト:           20% — DBや外部APIとの結合
+  ユニットテスト:       70% — 速い・安定・豊富
+
+アンチパターン: テストアイスクリームコーン（逆ピラミッド）
+  E2Eテストが多い → CI が遅い、フレイキーになりやすい
+  ユニットテストが少ない → 変更の影響範囲が分からない
+
+```bash
+# テスト種別の比率確認
+find . -name "*.e2e.*" -o -name "*.e2e-spec.*" | grep -v node_modules | wc -l
+find . -name "*.spec.*" -o -name "*.test.*" | grep -v node_modules | grep -v ".e2e." | wc -l
+```
+
+- [ ] テストピラミッドの比率が適切か（ユニット > 統合 > E2E）
+- [ ] E2Eテストがクリティカルフロー（ログイン, 購入, 重要ユーザージャーニー）に集中しているか
+
+### Contract Testing（マイクロサービス/API利用時）
+
+```typescript
+// Pact.js を使用したConsumer-Driven Contract Test
+// Consumer（呼び出し側）がProvider（提供側）への期待を定義
+describe("User Service Contract", () => {
+  it("should return user object", () => {
+    provider.addInteraction({
+      state: "user 1 exists",
+      uponReceiving: "a GET request for user 1",
+      withRequest: { method: "GET", path: "/users/1" },
+      willRespondWith: {
+        status: 200,
+        body: { id: like(1), name: like("Alice") },
+      },
+    });
+    // → Provider側はこの契約を満たすことをCIで検証する必要がある
+  });
+});
+```
+
+- [ ] マイクロサービス間/外部APIとの契約テスト（Pact等）が実装されているか（マイクロサービス構成の場合）
+- [ ] APIスキーマの変更（OpenAPI/gRPC proto）が下位互換性を維持しているか検証されているか
+
+### Mutation Testing（テストの有効性確認）
+
+```
+Mutation Testing（突然変異テスト）の概念:
+  コードに意図的なバグ（突然変異）を挿入し、テストがそれを検出できるか検証する
+  - a > b → a >= b に変更
+  - return true → return false に変更
+  - db.save() を削除
+
+  突然変異を検出できないテスト → テストがコードの振る舞いを保証していない
+
+Stryker（JavaScript向け）の活用:
+  npx stryker run 2>/dev/null
+  目標: Mutation Score > 70%（それ以下はテストが薄い可能性）
+```
+
+- [ ] テストカバレッジが高くても内容が薄くないか（`if(true)` をテストするだけ等）
+- [ ] 重要なビジネスロジックにMutation Testingを適用する価値があるか（Stryker推奨）
 
 ### モックの適切な使用
 

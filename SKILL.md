@@ -18,7 +18,7 @@ description: |
 # Ultimate Code Review Skill
 
 どのプロジェクトでも使用可能なユニバーサル最強コードレビュースキル。
-25視点の並列分析 + 6つのメタ分析（他ツールにはない3次元飛躍）を実行する。
+29視点の並列分析 + 9つのメタ分析（他ツールにはない3次元飛躍）を実行する。
 
 ---
 
@@ -54,15 +54,16 @@ description: |
 └─────────────────────────────────────────────────────────────┘
                       ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ Phase 1: 並列25視点分析（4エージェント同時起動）              │
+│ Phase 1: 並列29視点分析（5エージェント同時起動）              │
 │  Agent-A: カテゴリA 視点1-6   → references/perspective-A.md │
 │  Agent-B: カテゴリB 視点7-13  → references/perspective-B.md │
 │  Agent-C: カテゴリC 視点14-19 → references/perspective-C.md │
-│  Agent-D: カテゴリD 視点20-25 → references/perspective-D.md │
+│  Agent-D: カテゴリD 視点20-26 → references/perspective-D.md │
+│  Agent-E: カテゴリE 視点27-29 → references/perspective-E.md │
 └─────────────────────────────────────────────────────────────┘
                       ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ Phase 2: 6つの横断メタ分析                                    │
+│ Phase 2: 9つの横断メタ分析                                    │
 │  → references/meta-analysis.md を参照                       │
 │  2-1: 視点間相関検出                                          │
 │  2-2: 赤チーム分析（攻撃・障害シナリオ）                        │
@@ -72,6 +73,7 @@ description: |
 │  2-6: 変更容易性測定（変更増幅係数）                           │
 │  2-7: 認知負荷評価（メンタルモデル複雑さ）                      │
 │  2-8: CRITICAL/HIGH問題の自動修正 + 再検証                    │
+│  2-9: SLOインパクト評価（デプロイリスク・戦略）                 │
 └─────────────────────────────────────────────────────────────┘
                       ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -118,25 +120,25 @@ description: |
 
 ---
 
-## Phase 1: 25視点並列分析
+## Phase 1: 29視点並列分析
 
-### 4エージェント同時起動
+### 5エージェント同時起動
 
-**実行方法**: 並列エージェント実行が可能な場合は4エージェントを同時起動する。並列実行が利用できない環境では A→B→C→D の順で逐次実行し、結果を統合する。
+**実行方法**: 並列エージェント実行が可能な場合は5エージェントを同時起動する。並列実行が利用できない環境では A→B→C→D→E の順で逐次実行し、結果を統合する。
 
 ```
 Agent-A（カテゴリA: ユーザー価値）:
   視点1: 機能的正確性
-  視点2: セキュリティ
+  視点2: セキュリティ（OWASP Web/API Top 10, CSRF, SSRF, JWT攻撃, ReDoS等）
   視点3: パフォーマンス
   視点4: アクセシビリティ
   視点5: 国際化（i18n）
   視点6: エラーハンドリング
 
 Agent-B（カテゴリB: 開発者体験）:
-  視点7: アーキテクチャ適合性
+  視点7: アーキテクチャ適合性（SOLID完全版）
   視点8: コード品質
-  視点9: テスタビリティ
+  視点9: テスタビリティ（テストピラミッド・Contract Testing・Mutation Testing）
   視点10: 依存関係管理
   視点11: ドキュメンテーション
   視点12: 保守性
@@ -144,8 +146,8 @@ Agent-B（カテゴリB: 開発者体験）:
 
 Agent-C（カテゴリC: 運用・成長）:
   視点14: 技術的負債
-  視点15: 可観測性
-  視点16: CI/CD統合
+  視点15: 可観測性（OpenTelemetry・Prometheusメトリクス品質・Label Cardinality）
+  視点16: CI/CD統合（GitHub Actions セキュリティ・Dockerfileセキュリティ）
   視点17: ライセンスコンプライアンス
   視点18: スケーラビリティ
   視点19: 後方互換性
@@ -155,8 +157,14 @@ Agent-D（カテゴリD: 深層技術品質）:
   視点21: データモデル設計
   視点22: 設定管理
   視点23: 並行処理・非同期
-  視点24: API設計原則
+  視点24: API設計原則（GraphQL/WebSocket固有セキュリティ含む）
   視点25: オンボーディング品質
+  視点26: サプライチェーンセキュリティ（Dependency Confusion・シークレットスキャン）
+
+Agent-E（カテゴリE: 横断品質）:
+  視点27: プライバシー・コンプライアンス（GDPR/CCPA・PII管理）
+  視点28: SRE・信頼性工学（Circuit Breaker・タイムアウト階層・冪等性・SLO）
+  視点29: インフラ・コンテナセキュリティ（Dockerfile CIS・GitHub Actions・K8s PSS）
 ```
 
 ### 各エージェントへの指示テンプレート
@@ -173,7 +181,7 @@ Agent-D（カテゴリD: 深層技術品質）:
 詳細ガイド: [該当するperspective-*.mdの内容]
 
 出力形式:
-## カテゴリ[A/B/C/D]分析結果
+## カテゴリ[A/B/C/D/E]分析結果
 
 ### 視点[N]: [視点名]
 評価: ★☆☆☆☆ ~ ★★★★★
@@ -208,6 +216,10 @@ Phase 1の結果を横断して同一根本原因を探す。
 
 ### 2-8: 自動修正
 `references/auto-fix-playbook.md` 参照
+
+### 2-9: SLOインパクト評価
+`references/meta-analysis.md` の2-9を参照。
+デプロイリスクとカナリア/フィーチャーフラグ戦略を提言する。
 
 ---
 
@@ -317,10 +329,11 @@ CRITICAL: ハードコードされたAPIキー検出 — src/config.ts:5
 | ファイル | 役割 |
 |---------|------|
 | `references/project-intelligence.md` | Phase 0: タイプ判定・重み付けルール |
-| `references/perspective-A.md` | 視点1-6の詳細チェックリスト |
-| `references/perspective-B.md` | 視点7-13の詳細チェックリスト |
-| `references/perspective-C.md` | 視点14-19の詳細チェックリスト |
-| `references/perspective-D.md` | 視点20-25の詳細チェックリスト |
-| `references/meta-analysis.md` | 6つのメタ分析ガイド |
-| `references/auto-fix-playbook.md` | 自動修正ルールブック |
+| `references/perspective-A.md` | 視点1-6の詳細チェックリスト（セキュリティ: OWASP全網羅） |
+| `references/perspective-B.md` | 視点7-13の詳細チェックリスト（SOLID完全版・テストピラミッド） |
+| `references/perspective-C.md` | 視点14-19の詳細チェックリスト（GitHub Actions・Dockerfile） |
+| `references/perspective-D.md` | 視点20-26の詳細チェックリスト（GraphQL/WebSocket・サプライチェーン） |
+| `references/perspective-E.md` | 視点27-29の詳細チェックリスト（GDPR・SRE・インフラセキュリティ） |
+| `references/meta-analysis.md` | 9つのメタ分析ガイド（SLOインパクト評価含む） |
+| `references/auto-fix-playbook.md` | 自動修正ルールブック（30パターン） |
 | `references/executive-synthesis.md` | レポート生成ガイド |

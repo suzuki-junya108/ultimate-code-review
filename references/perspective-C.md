@@ -75,10 +75,50 @@ logger.error("Failed to process order", {
 - [ ] 外部API呼び出しにトレースID（相関ID）が伝播しているか
 - [ ] ヘルスチェックエンドポイントが存在するか（`/health`）
 
+### OpenTelemetry / メトリクス品質
+
+```typescript
+// 推奨: OpenTelemetry 3本柱の整合
+// Metrics: 集計された計測値（Prometheus形式）
+// Traces: リクエスト処理の因果関係（Jaeger/Zipkin）
+// Logs: 構造化ログ（trace_idと紐付け）
+
+// Prometheus 命名規則の確認:
+// ✅ http_requests_total        （カウンター: _total サフィックス）
+// ✅ request_duration_seconds   （ヒストグラム: _seconds/_bytes）
+// ✅ active_connections         （ゲージ: サフィックスなし）
+// ❌ httpRequests, requestDuration（camelCase は不可）
+// ❌ response_time_ms（_ms より _seconds を推奨）
+```
+
+**Label Cardinality（ラベル爆発）の検出:**
+```typescript
+// 危険: 高カーディナリティ ラベル（時系列が爆発する）
+histogram.record(duration, {
+  user_id: userId,     // ユーザー数分の時系列が生成される → OOM
+  request_id: reqId,   // リクエストごとに一意 → 最悪パターン
+});
+
+// 推奨: 低カーディナリティ ラベルのみ
+histogram.record(duration, {
+  status_code: "200",  // 有限の値
+  route: "/api/orders", // 有限の値
+  method: "GET",       // 有限の値
+});
+```
+
+- [ ] Prometheusメトリクス名がsnake_case + 適切なサフィックス（_total/_seconds/_bytes）か
+- [ ] ラベルにuser_id/request_id等の高カーディナリティ値が含まれていないか
+- [ ] OpenTelemetryのTrace IDがログに伝播されているか（ログ⇔トレースの紐付け）
+- [ ] 外部API呼び出しにSpanが設定されているか（分散トレーシング）
+
 ### アラートの設定
 
 - [ ] 重大なエラー（5xx, 認証失敗の急増）にアラートが設定されているか
 - [ ] アラートが「アクション可能」か（鳴ったら何をすべきか明確か）
+- [ ] アラート疲れ防止: フラッピング（頻繁なON/OFF）を抑制する設定があるか
+- [ ] アラートに「何をすべきか」のRunbookリンクが含まれているか
+- [ ] 症状ベースアラート（SLO違反）が原因ベースアラートより優先されているか
 - [ ] オンコールの担当者がアラートを受け取れるか
 
 ---
@@ -113,6 +153,58 @@ logger.error("Failed to process order", {
 - [ ] mainブランチへの直接プッシュが制限されているか
 - [ ] PRにレビュアーが設定されているか
 - [ ] CI/CDが失敗した場合にマージがブロックされるか
+
+### GitHub Actions セキュリティ（.github/workflows/ 存在時）
+
+```yaml
+# 危険: タグはミュータブル（改ざんされる可能性がある）
+uses: actions/checkout@v4
+
+# 推奨: コミットSHAにピン留め（イミュータブル）
+uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+# 危険: 過剰な権限
+permissions: write-all
+
+# 推奨: 最小権限
+permissions:
+  contents: read
+  pull-requests: write  # 必要なもののみ
+
+# 危険: GITHUB_TOKENを第三者に渡す可能性
+run: curl -H "Authorization: ${{ secrets.GITHUB_TOKEN }}" ${{ github.event.inputs.url }}
+# → ユーザー入力URL（SSRF）+ トークン漏洩の組み合わせ
+```
+
+- [ ] サードパーティアクションがコミットSHA（フルハッシュ）にピン留めされているか
+- [ ] GITHUB_TOKENのpermissionsが最小権限（各jobに明示的に設定）か
+- [ ] ワークフロー内にsecretsがハードコードされていないか（`echo "$SECRET"` 等）
+- [ ] pull_request_target トリガーが安全に使用されているか（フォークからの悪意あるPR）
+- [ ] self-hosted runnerが使用される場合、分離された環境で動作しているか
+
+### Dockerfileセキュリティ（Dockerfile存在時）
+
+```dockerfile
+# 危険パターン
+FROM ubuntu:latest             # latestタグ → 再現性なし、予期しない変更
+RUN apt-get install -y ...     # パッケージバージョン未固定
+RUN echo $SECRET > /app/.env  # シークレットがレイヤーに残る（docker history で見える）
+CMD ["node", "app.js"]         # rootユーザーで実行（デフォルト）
+
+# 推奨
+FROM node:20.11-alpine3.19     # バージョン固定 + 最小イメージ
+RUN --mount=type=secret,id=npmrc,target=/root/.npmrc npm install  # シークレットをレイヤーに残さない
+RUN addgroup -S app && adduser -S app -G app
+USER app                       # 非rootユーザー
+HEALTHCHECK --interval=30s CMD curl -f http://localhost:3000/health || exit 1
+```
+
+- [ ] ベースイメージがlatestタグでないか（バージョン固定）
+- [ ] rootユーザーで実行されていないか（USER命令で非rootに切り替え）
+- [ ] ビルドレイヤーにsecret情報が含まれていないか（RUN --mount=type=secret 推奨）
+- [ ] .dockerignoreに.env, credentials, .git等が含まれているか
+- [ ] マルチステージビルドで最終イメージが最小化されているか（dev依存を含まない）
+- [ ] HEALTHCHECKが定義されているか
 
 ---
 
