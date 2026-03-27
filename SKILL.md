@@ -1,13 +1,24 @@
+---
+name: ultimate-code-review
+license: MIT
+description: |
+  Run a comprehensive, multi-perspective code review on any codebase.
+  Trigger this skill when the user asks for: code review, コードレビュー,
+  ultimate review, 最強レビュー, 包括的レビュー, comprehensive review,
+  deep review, full review, PR review, pull request review, security review,
+  performance review, architecture review, 品質チェック, 品質レビュー,
+  コード品質, review this PR, review my code, review these changes,
+  check my code, analyze this code, コードを見て, レビューして.
+  Also trigger for: /ultimate-code-review, /review, /code-review.
+  Do NOT trigger when: the user asks to write new code, refactor code
+  (without review intent), explain code, debug a specific error, run tests,
+  generate documentation, or asks a general programming question.
+---
+
 # Ultimate Code Review Skill
 
 どのプロジェクトでも使用可能なユニバーサル最強コードレビュースキル。
 25視点の並列分析 + 6つのメタ分析（他ツールにはない3次元飛躍）を実行する。
-
----
-
-## 起動条件
-
-`/ultimate-code-review` コマンドが呼ばれたとき、またはユーザーが「最強レビュー」「包括的レビュー」「ultimate review」を要求したとき。
 
 ---
 
@@ -22,6 +33,15 @@
 引数なし → full モード
 `/ultimate-code-review focus security` → セキュリティ視点集中
 `/ultimate-code-review quick` → 高速スキャン
+
+---
+
+## 実行前チェックリスト
+
+- [ ] 変更ファイルのスコープは明確か（git diff / ステージング済みファイル）
+- [ ] プロジェクトルートで実行しているか（モノレポは適切なサブディレクトリ）
+- [ ] レビューモードは適切か（full / focus / quick）
+- [ ] 対象コードはビルドが通る状態か（構文エラーがあると分析精度が低下）
 
 ---
 
@@ -102,7 +122,7 @@
 
 ### 4エージェント同時起動
 
-**実行方法**: Agent ツールで4エージェントを同時に起動する
+**実行方法**: 並列エージェント実行が可能な場合は4エージェントを同時起動する。並列実行が利用できない環境では A→B→C→D の順で逐次実行し、結果を統合する。
 
 ```
 Agent-A（カテゴリA: ユーザー価値）:
@@ -175,7 +195,16 @@ Phase 1の結果を横断して同一根本原因を探す。
 複数視点で同じ問題が検出された場合、優先度を昇格させる。
 
 ### 2-2 〜 2-7: 詳細メタ分析
-`references/meta-analysis.md` 参照
+
+以下の順で実行する（`references/meta-analysis.md` 参照）:
+1. 赤チーム分析（攻撃・障害シナリオ）
+2. 進化適応分析（gitログ → フラジリティスコア算出）
+3. 不作為コスト（問題を放置した場合の週次・月次・年次影響）
+4. ビジネス価値検証（削除テスト・過剰設計検出・仕様乖離）
+5. 変更容易性測定（変更増幅係数 = 1変更で何ファイル要修正か）
+6. 認知負荷評価（Miller's Law: 前提知識数 > 7 を超過した箇所）
+
+全2-1〜2-7の結果を確認後、CRITICAL/HIGH問題が残る場合のみ2-8を実行する。
 
 ### 2-8: 自動修正
 `references/auto-fix-playbook.md` 参照
@@ -212,6 +241,74 @@ auto-fix-playbook.md でパターンマッチング
     ↓
 再スキャン（修正済み問題を除外）
 ```
+
+---
+
+## 使用例
+
+### 例1: デフォルト（fullモード）
+
+**入力:**
+```
+/ultimate-code-review
+```
+
+**出力例（サマリー部分）:**
+```
+## エグゼクティブサマリー
+総合評価: B（CRITICALなし、HIGH 2件）
+CRITICAL: 0件  HIGH: 2件（自動修正済み: 1件）  MEDIUM: 5件  LOW: 3件
+
+🔴 HIGH: src/auth/middleware.ts:42 — JWT署名検証が省略されている
+  修正案: jwt.verify(token, secret, { algorithms: ["HS256"] })
+🔴 HIGH: src/api/users.ts:18 — N+1クエリ（ループ内DB呼び出し）
+  修正案: db.user.findMany({ where: { id: { in: ids } } })
+```
+
+### 例2: セキュリティ集中モード
+
+**入力:**
+```
+/ultimate-code-review focus security
+```
+
+**出力例:**
+```
+カテゴリA 視点2（セキュリティ）のみ実行。
+CRITICAL: ハードコードされたAPIキー検出 — src/config.ts:5
+  const API_KEY = "sk-proj-xxxx" → process.env.API_KEY に変更
+```
+
+---
+
+## 失敗パターンと回復手順
+
+### F-1: Phase 0 でプロジェクトタイプを特定できない
+
+**症状**: `package.json` も `Cargo.toml` も見つからず、タイプ判定が「不明」になる。
+**原因**: モノレポのサブディレクトリで実行した、または非標準の構成。
+**回復手順**:
+1. ユーザーに確認する:「どのディレクトリがプロジェクトルートですか？」
+2. 手動でタイプを指定して継続:「REST APIとして分析します」
+3. `references/project-intelligence.md` の「その他」フォールバックを適用する。
+
+### F-2: Phase 1 でエージェントの一部が結果を返さない
+
+**症状**: 4エージェントのうち1〜2が空の出力を返す、または応答が極端に遅い。
+**原因**: 対象ファイルが大きすぎる（1万行超）かタイムアウト。
+**回復手順**:
+1. 対象ファイルを200行ずつのチャンクに分割して再投入する。
+2. タイムアウトした視点番号を特定し、単独で再実行する。
+3. `quick` モードに切り替えて CRITICAL/HIGH のみを対象にする。
+
+### F-3: Phase 2 で相関グループが空になる
+
+**症状**: 2-1 視点間相関検出が「相関なし」を返し、メタ分析の価値が出ない。
+**原因**: Phase 1 の各エージェントが問題を0件しか検出しなかった。
+**回復手順**:
+1. ★3以下の視点を再確認し「問題なし」と「検出困難」を区別する。
+2. git hotspotを直接分析して潜在的問題を探す。
+3. 全視点で健全と判断し Grade A でレポートする。
 
 ---
 
