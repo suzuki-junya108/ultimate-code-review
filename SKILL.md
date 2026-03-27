@@ -26,7 +26,7 @@ description: |
 
 | モード | 用途 | 所要時間 | 使用場面 |
 |--------|------|---------|---------|
-| **full** | 全25視点 + 全6メタ分析 | 15-20分 | PR前、重要機能 |
+| **full** | 全25視点 + 全6メタ分析 | 18-25分 | PR前、重要機能 |
 | **focus** | 指定カテゴリのみ | 5-8分 | 特定の懸念がある時 |
 | **quick** | CRITICAL/HIGH検出のみ | 3-5分 | 軽微な変更 |
 
@@ -60,6 +60,22 @@ description: |
 │  Agent-C: カテゴリC 視点14-19 → references/perspective-C.md │
 │  Agent-D: カテゴリD 視点20-26 → references/perspective-D.md │
 │  Agent-E: カテゴリE 視点27-29 → references/perspective-E.md │
+└─────────────────────────────────────────────────────────────┘
+                      ↓
+┌─────────────────────────────────────────────────────────────┐
+│ Phase 1.5: 言語固有ディープレビュー（3-5分）                   │
+│  言語検出: references/lang/detector.md                       │
+│  Python  → references/lang/python.md                        │
+│  Go      → references/lang/go.md                            │
+│  Rust    → references/lang/rust.md                          │
+│  TS/JS   → references/lang/typescript.md                    │
+│  Java    → references/lang/java.md                          │
+│  Kotlin  → references/lang/kotlin.md                        │
+│  Swift   → references/lang/swift.md                         │
+│  PHP     → references/lang/php.md                           │
+│  Ruby    → references/lang/ruby.md                          │
+│  Shell   → references/lang/shell.md                         │
+│  未対応  → スキップ（[LANG:UNSUPPORTED]記録）                 │
 └─────────────────────────────────────────────────────────────┘
                       ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -194,6 +210,44 @@ Agent-E（カテゴリE: 横断品質）:
 
 ---
 
+## Phase 1.5: 言語固有ディープレビュー
+
+### 実行条件
+
+| モード | 動作 |
+|--------|------|
+| **full** | 主要言語: 全カテゴリ実行 / 副次言語（2ファイル以上）: CRITICAL/HIGH のみ |
+| **focus** | 言語固有チェックのみ実行（focus lang 指定時）または通常フルスキャン |
+| **quick** | CRITICAL/HIGH のみ実行（全カテゴリ対象） |
+
+### 実行手順
+
+1. `references/lang/detector.md` を読み込み、主要言語・バージョンを検出
+2. 対応する `references/lang/[language].md` を読み込む
+3. バージョン固有の無効チェックを `detector.md` のマトリクスで確認し N/A をマーク
+4. 変更ファイルを対象に各カテゴリのチェックを実行
+
+### エージェントへの指示テンプレート
+
+```
+あなたは[言語名]専門コードレビューエージェントです。
+[言語名] [バージョン] の言語固有チェックを実行してください。
+
+対象ファイル: [変更ファイルのリスト]
+言語固有ガイド: references/lang/[language].md
+バージョン固有の無効チェック: [detector.mdから取得したリスト]
+
+CRITICAL/HIGH を優先して報告し、根拠となるコードスニペットと修正案を含めてください。
+```
+
+### Phase 1.5 結果の扱い
+
+- 言語固有 CRITICAL は Phase 2 の相関分析 (2-1) で Phase 1 の結果と統合する
+- Phase 1 でも同じ問題が指摘された場合: severity を1段階昇格（HIGH → CRITICAL）
+- レポートの `📋 詳細レビュー結果` に `🔤 言語固有レビュー結果` セクションを追加する
+
+---
+
 ## Phase 2: メタ分析
 
 `references/meta-analysis.md` の詳細ガイドに従って実行:
@@ -322,6 +376,17 @@ CRITICAL: ハードコードされたAPIキー検出 — src/config.ts:5
 2. git hotspotを直接分析して潜在的問題を探す。
 3. 全視点で健全と判断し Grade A でレポートする。
 
+### F-4: Phase 1.5 で言語が検出できない、または未対応言語
+
+**症状**: `detector.md` の検出ルールにマッチするファイルが存在しない。または検出された言語の `references/lang/` ファイルが存在しない。
+**原因**: C#, Scala, Dart 等の未対応言語、または非標準のプロジェクト構成。
+**回復手順**:
+1. Phase 0 出力に記録: `[LANG:UNSUPPORTED: C#]` / `言語固有レビュー: 未実施`
+2. Phase 1.5 をスキップし Phase 2 へ進む
+3. Phase 1 の各エージェントに通知: 「lang ファイルなし: C#。各自の知識で言語固有リスクを評価すること」
+4. レポートの `🔤 言語固有レビュー結果` セクションに警告を記載:
+   `⚠️ [言語名] は未対応言語です。言語固有の深層チェックは実施されていません。`
+
 ---
 
 ## リファレンスファイル
@@ -337,3 +402,14 @@ CRITICAL: ハードコードされたAPIキー検出 — src/config.ts:5
 | `references/meta-analysis.md` | 9つのメタ分析ガイド（SLOインパクト評価含む） |
 | `references/auto-fix-playbook.md` | 自動修正ルールブック（30パターン） |
 | `references/executive-synthesis.md` | レポート生成ガイド |
+| `references/lang/detector.md` | Phase 1.5: 言語検出・バージョン判定プロトコル |
+| `references/lang/python.md` | Phase 1.5: Python専門チェック（12カテゴリ） |
+| `references/lang/go.md` | Phase 1.5: Go専門チェック（13カテゴリ） |
+| `references/lang/rust.md` | Phase 1.5: Rust専門チェック（12カテゴリ） |
+| `references/lang/typescript.md` | Phase 1.5: TypeScript/JS専門チェック（8カテゴリ） |
+| `references/lang/java.md` | Phase 1.5: Java専門チェック（7カテゴリ） |
+| `references/lang/kotlin.md` | Phase 1.5: Kotlin専門チェック（7カテゴリ） |
+| `references/lang/swift.md` | Phase 1.5: Swift専門チェック（7カテゴリ） |
+| `references/lang/php.md` | Phase 1.5: PHP専門チェック（8カテゴリ） |
+| `references/lang/ruby.md` | Phase 1.5: Ruby専門チェック（7カテゴリ） |
+| `references/lang/shell.md` | Phase 1.5: Shell/Bash専門チェック（7カテゴリ） |

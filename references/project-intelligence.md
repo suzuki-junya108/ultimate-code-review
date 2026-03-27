@@ -51,6 +51,43 @@ commander / yargs / oclif / click / cobra
 
 ---
 
+### ステップ2.5: 言語検出（Phase 1.5 用）
+
+`references/lang/detector.md` の検出カスケードを実行し、主要言語・バージョンを特定する。
+
+**検出優先順位**（先にマッチしたものが主要言語）:
+
+```
+1. Cargo.toml 存在               → Rust   → references/lang/rust.md
+2. go.mod 存在                   → Go     → references/lang/go.md
+3. pyproject.toml / setup.py
+   / requirements.txt 存在       → Python → references/lang/python.md
+4. pom.xml + .kt ファイル存在    → Kotlin → references/lang/kotlin.md
+5. pom.xml / build.gradle 存在   → Java   → references/lang/java.md
+6. Package.swift / *.xcodeproj   → Swift  → references/lang/swift.md
+7. Gemfile / .ruby-version       → Ruby   → references/lang/ruby.md
+8. composer.json 存在            → PHP    → references/lang/php.md
+9. *.sh / *.bash ファイル存在    → Shell  → references/lang/shell.md
+10. tsconfig.json 存在           → TypeScript → references/lang/typescript.md
+11. package.json のみ            → JavaScript → references/lang/typescript.md
+```
+
+**バージョン検出**（詳細は `references/lang/detector.md` 参照）:
+- Python: `.python-version` → `pyproject.toml requires-python` → `Dockerfile FROM python:X.Y`
+- Go: `go.mod` の `go X.YY` ディレクティブ
+- Rust: `rust-toolchain.toml` → `Cargo.toml edition`
+- Java/Kotlin: `pom.xml <java.version>` → `build.gradle sourceCompatibility`
+
+**Phase 0 出力フォーマットへの追加フィールド**:
+```
+**主要言語**: Python 3.11（pyproject.toml: requires-python = ">=3.11"）
+**言語固有レビューファイル**: references/lang/python.md
+**副次言語**: Shell（2ファイル, CRITICAL/HIGHのみ）
+**バージョン固有の無効チェック**: なし（3.11は全チェック有効）
+```
+
+---
+
 ## 開発フェーズ判定フロー
 
 ### gitログ分析
